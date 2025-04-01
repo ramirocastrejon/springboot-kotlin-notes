@@ -3,7 +3,11 @@ package com.ramiro.castrejon.springboot_crashcourse.controllers
 import com.ramiro.castrejon.springboot_crashcourse.controllers.NoteController.NoteResponse
 import com.ramiro.castrejon.springboot_crashcourse.data.repository.NoteRepository
 import com.ramiro.castrejon.springboot_crashcourse.model.Note
+import com.ramiro.castrejon.springboot_crashcourse.model.User
+import jakarta.validation.Valid
+import jakarta.validation.constraints.NotBlank
 import org.bson.types.ObjectId
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 import java.time.Instant
 
@@ -15,6 +19,7 @@ class NoteController(
 
     data class NoteRequest(
         val id: String?,
+        @field:NotBlank(message = "Title is required")
         val title: String,
         val content : String,
         val color: Long
@@ -30,7 +35,10 @@ class NoteController(
 
     @PostMapping
     fun save(
-        @RequestBody body: NoteRequest) : NoteResponse {
+       @Valid @RequestBody body: NoteRequest
+    ): NoteResponse {
+        val ownerId = SecurityContextHolder.getContext().authentication.principal as String
+        println("owner id: $ownerId")
         val note = noteRepository.save(
             Note(
                 id = body.id?.let { ObjectId(it) } ?: ObjectId.get(),
@@ -38,7 +46,7 @@ class NoteController(
                 content = body.content,
                 color = body.color,
                 created_at = Instant.now(),
-                ownerId = ObjectId()
+                ownerId = ObjectId(ownerId)
             )
         )
 
@@ -46,9 +54,8 @@ class NoteController(
     }
 
     @GetMapping
-    fun findByOwnerId(
-        @RequestParam("ownerId") ownerId: String
-    ): List<NoteResponse> {
+    fun findByOwnerId(): List<NoteResponse> {
+        val ownerId = SecurityContextHolder.getContext().authentication.principal as String
         return noteRepository.findByOwnerId(
             ObjectId(ownerId)
         ).map {
@@ -58,7 +65,14 @@ class NoteController(
 
     @DeleteMapping(path = ["/{id}"])
     fun deleteById(@PathVariable("id") id: String) {
-        noteRepository.deleteById(ObjectId(id))
+        val note = noteRepository.findById(ObjectId(id)).orElseThrow {
+            IllegalArgumentException("Note not found")
+        }
+        val ownerId = SecurityContextHolder.getContext().authentication.principal as String
+        if (note.ownerId.toHexString() == ownerId) {
+            noteRepository.deleteById(ObjectId(id))
+        }
+
     }
 }
 
